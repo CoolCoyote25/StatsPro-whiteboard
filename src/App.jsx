@@ -18,8 +18,9 @@ function App() {
   const previousModeRef = useRef({ color: 'red', lineStyle: 'solid' }); // Store previous mode
   
   // Player markers
-  const [markers, setMarkers] = useState([]); // Array of {number, x, y, hasBall: boolean, screen: {x1, y1, x2, y2} | null}
+  const [markers, setMarkers] = useState([]); // Array of {number, x, y, hasBall: boolean, screen: {x1, y1, x2, y2} | null, team: 'team'|'opponent'}
   const [selectedMarker, setSelectedMarker] = useState(1); // Which marker number to place (1-5)
+  const [selectedTeam, setSelectedTeam] = useState('team'); // 'team' or 'opponent'
   const [draggingMarker, setDraggingMarker] = useState(null); // Index of marker being dragged
   const [markerMode, setMarkerMode] = useState(false); // Toggle marker placement mode
   const [lastTapTime, setLastTapTime] = useState(0); // For double-tap detection
@@ -58,6 +59,11 @@ function App() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [playName, setPlayName] = useState('');
   const [savedPlays, setSavedPlays] = useState([]);
+  
+  // Notes panel
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notesContent, setNotesContent] = useState('');
+  const notesTextareaRef = useRef(null);
 
   // Load court image
   useEffect(() => {
@@ -68,6 +74,23 @@ function App() {
       setImageLoaded(true);
     };
   }, []);
+
+  // Load notes from localStorage on mount
+  useEffect(() => {
+    const savedNotes = localStorage.getItem('coach-notes');
+    if (savedNotes) {
+      setNotesContent(savedNotes);
+    }
+  }, []);
+
+  // Auto-save notes to localStorage when content changes
+  useEffect(() => {
+    const saveTimeout = setTimeout(() => {
+      localStorage.setItem('coach-notes', notesContent);
+    }, 300); // Debounce 300ms
+    
+    return () => clearTimeout(saveTimeout);
+  }, [notesContent]);
 
   // Handle window resize
   useEffect(() => {
@@ -295,23 +318,26 @@ function App() {
     // Finally draw each player marker (on top of everything)
     markers.forEach(marker => {
       const radius = 25;
+      const isOpponent = marker.team === 'opponent';
       
-      // Draw circle - ORANGE if has ball, WHITE if not
+      // Draw circle
       ctx.beginPath();
       ctx.arc(marker.x, marker.y, radius, 0, Math.PI * 2);
       
       if (marker.hasBall) {
-        ctx.fillStyle = 'rgba(255, 152, 0, 0.95)'; // Orange for ball possession
+        ctx.fillStyle = 'rgba(255, 152, 0, 0.95)'; // Orange for ball possession (both teams)
+      } else if (isOpponent) {
+        ctx.fillStyle = 'rgba(43, 45, 66, 0.95)'; // Dark charcoal for opponents
       } else {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White for normal
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White for team
       }
       ctx.fill();
-      ctx.strokeStyle = '#000';
+      ctx.strokeStyle = isOpponent ? '#1a1b28' : '#000';
       ctx.lineWidth = 3;
       ctx.stroke();
       
-      // Draw number - white text if has ball, black if not
-      ctx.fillStyle = marker.hasBall ? '#fff' : '#000';
+      // Draw number - white text if has ball or opponent, black if team without ball
+      ctx.fillStyle = (marker.hasBall || isOpponent) ? '#fff' : '#000';
       ctx.font = 'bold 24px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -538,18 +564,22 @@ function App() {
         break;
         
       case 'PLACE_PLAYER':
-        // Remove the placed player
-        setMarkers(prevMarkers => prevMarkers.filter(m => m.number !== lastAction.data.number));
+        // Remove the placed player (match by number AND team)
+        setMarkers(prevMarkers => prevMarkers.filter(m => 
+          !(m.number === lastAction.data.number && m.team === lastAction.data.team)
+        ));
         break;
         
       case 'MOVE_PLAYER':
         // Restore player to previous position and remove path
         setMarkers(prevMarkers => prevMarkers.map(m => 
-          m.number === lastAction.data.number 
+          (m.number === lastAction.data.number && m.team === lastAction.data.team)
             ? { ...m, x: lastAction.data.prevX, y: lastAction.data.prevY }
             : m
         ));
-        setMarkerPaths(prevPaths => prevPaths.filter(p => p.markerNumber !== lastAction.data.number));
+        setMarkerPaths(prevPaths => prevPaths.filter(p => 
+          !(p.markerNumber === lastAction.data.number && p.markerTeam === lastAction.data.team)
+        ));
         break;
         
       case 'PASS_BALL':
@@ -564,7 +594,7 @@ function App() {
       case 'SET_SCREEN':
         // Remove screen from player
         setMarkers(prevMarkers => prevMarkers.map(m =>
-          m.number === lastAction.data.number
+          (m.number === lastAction.data.number && m.team === lastAction.data.team)
             ? { ...m, screen: null }
             : m
         ));
@@ -1108,53 +1138,44 @@ function App() {
         }
       }
     } else {
-      // Tapping on empty space
+      // Tapping on empty space - place new marker
       
-      // Check if all 5 markers (1,2,3,4,5) already exist
-      const allMarkersExist = [1, 2, 3, 4, 5].every(num => 
-        markers.some(m => m.number === num)
-      );
+      // Check if this number+team combo already exists
+      const existingMarkerIndex = markers.findIndex(m => m.number === selectedMarker && m.team === selectedTeam);
       
-      // If all 5 markers exist, don't allow placing/replacing (prevents teleportation)
-      if (allMarkersExist) {
-        // Do nothing - user must drag existing markers to reposition
-        return;
-      }
-      
-      // Place new marker (only if not all 5 exist)
+      // Place new marker
       const ctx = canvas.getContext('2d');
       const radius = 25;
+      const isOpponent = selectedTeam === 'opponent';
       
-      // Draw the marker immediately (no ball by default)
+      // Draw the marker immediately with correct team color
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White
+      ctx.fillStyle = isOpponent ? 'rgba(43, 45, 66, 0.95)' : 'rgba(255, 255, 255, 0.9)';
       ctx.fill();
-      ctx.strokeStyle = '#000';
+      ctx.strokeStyle = isOpponent ? '#1a1b28' : '#000';
       ctx.lineWidth = 3;
       ctx.stroke();
       
-      // Draw number
-      ctx.fillStyle = '#000';
+      // Draw number with correct color
+      ctx.fillStyle = isOpponent ? '#fff' : '#000';
       ctx.font = 'bold 24px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(selectedMarker, x, y);
       
       // Then update state
-      const existingMarkerIndex = markers.findIndex(m => m.number === selectedMarker);
       let newMarkers;
       if (existingMarkerIndex !== -1) {
-        // Replace existing marker with same number (keep ball possession and screen if had them)
+        // Replace existing marker with same number and team (keep ball possession and screen if had them)
         newMarkers = [...markers];
         const hadBall = newMarkers[existingMarkerIndex].hasBall;
         const hadScreen = newMarkers[existingMarkerIndex].screen;
-        newMarkers[existingMarkerIndex] = { number: selectedMarker, x, y, hasBall: hadBall, screen: hadScreen || null };
+        newMarkers[existingMarkerIndex] = { number: selectedMarker, x, y, hasBall: hadBall, screen: hadScreen || null, team: selectedTeam };
       } else {
-        // Add new marker (no ball, no screen by default)
-        newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null }];
-        // Record player placement to history
-        recordAction('PLACE_PLAYER', { number: selectedMarker, x, y });
+        // Add new marker
+        newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+        recordAction('PLACE_PLAYER', { number: selectedMarker, x, y, team: selectedTeam });
       }
       setMarkers(newMarkers);
       
@@ -1371,6 +1392,7 @@ function App() {
         // Record screen setting to history
         recordAction('SET_SCREEN', {
           number: marker.number,
+          team: marker.team,
           screen: screen
         });
         
@@ -1411,8 +1433,10 @@ function App() {
       
       // Only record path if marker moved at least 10px (avoids recording tiny accidental moves)
       if (distance >= 10) {
-        // Remove any existing path for this player number
-        const newPaths = markerPaths.filter(p => p.markerNumber !== marker.number);
+        // Remove any existing path for this player number AND team
+        const newPaths = markerPaths.filter(p => 
+          !(p.markerNumber === marker.number && p.markerTeam === marker.team)
+        );
         
         // Smooth the path to remove jitter
         const smoothedPath = smoothPath(currentDragPath);
@@ -1420,6 +1444,7 @@ function App() {
         // Add new path for this player with smoothed points and ball status
         newPaths.push({
           markerNumber: marker.number,
+          markerTeam: marker.team,
           points: smoothedPath,
           hasBall: dragStartPosition.hasBall // Whether player had ball during this movement
         });
@@ -1429,6 +1454,7 @@ function App() {
         // Record player movement to history
         recordAction('MOVE_PLAYER', {
           number: marker.number,
+          team: marker.team,
           prevX: dragStartPosition.x,
           prevY: dragStartPosition.y,
           newX: marker.x,
@@ -1449,6 +1475,132 @@ function App() {
     setScreenDragStart(null);
   };
 
+  // Mouse handlers for marker mode (PC/Desktop support)
+  const handleMarkerMouseDown = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Check if clicking on an existing marker
+    const markerRadius = 25;
+    const clickedMarkerIndex = markers.findIndex(marker => {
+      const distance = Math.sqrt(Math.pow(marker.x - x, 2) + Math.pow(marker.y - y, 2));
+      return distance <= markerRadius;
+    });
+    
+    if (clickedMarkerIndex !== -1) {
+      // Clicking on an existing marker - start drag
+      setDraggingMarker(clickedMarkerIndex);
+      
+      const marker = markers[clickedMarkerIndex];
+      
+      // Check if marker has a screen - remove it
+      if (marker.screen) {
+        const newMarkersNoScreen = markers.map((m, idx) => {
+          if (idx === clickedMarkerIndex) {
+            return { ...m, screen: null };
+          }
+          return m;
+        });
+        setMarkers(newMarkersNoScreen);
+      }
+      
+      // Record starting position for movement path
+      const startPos = { x: marker.x, y: marker.y };
+      setDragStartPosition({ ...startPos, hasBall: marker.hasBall });
+      setCurrentDragPath([startPos]);
+    } else {
+      // Clicking on empty space - place new marker
+      
+      // Check if this number+team combo already exists
+      const existingMarkerIndex = markers.findIndex(m => m.number === selectedMarker && m.team === selectedTeam);
+      
+      let newMarkers;
+      if (existingMarkerIndex !== -1) {
+        // Replace existing marker with same number and team (keep ball possession and screen if had them)
+        newMarkers = [...markers];
+        const hadBall = newMarkers[existingMarkerIndex].hasBall;
+        const hadScreen = newMarkers[existingMarkerIndex].screen;
+        newMarkers[existingMarkerIndex] = { number: selectedMarker, x, y, hasBall: hadBall, screen: hadScreen || null, team: selectedTeam };
+      } else {
+        // Add new marker
+        newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+        recordAction('PLACE_PLAYER', { number: selectedMarker, x, y, team: selectedTeam });
+      }
+      setMarkers(newMarkers);
+    }
+  };
+
+  const handleMarkerMouseMove = (e) => {
+    if (draggingMarker === null) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Add point to drag path
+    setCurrentDragPath(prev => [...prev, { x, y }]);
+    
+    // Update marker position
+    const newMarkers = [...markers];
+    newMarkers[draggingMarker] = { ...newMarkers[draggingMarker], x, y };
+    setMarkers(newMarkers);
+    redrawStrokes();
+  };
+
+  const handleMarkerMouseUp = (e) => {
+    if (draggingMarker === null) return;
+    
+    const marker = markers[draggingMarker];
+    
+    // Check if marker was actually moved
+    if (dragStartPosition && currentDragPath.length > 1) {
+      const startPos = dragStartPosition;
+      const endPos = { x: marker.x, y: marker.y };
+      const distance = Math.sqrt(
+        Math.pow(endPos.x - startPos.x, 2) + 
+        Math.pow(endPos.y - startPos.y, 2)
+      );
+      
+      // Only record path if moved at least 10px
+      if (distance >= 10) {
+        const newPaths = markerPaths.filter(p => 
+          !(p.markerNumber === marker.number && p.markerTeam === marker.team)
+        );
+        
+        const smoothedPath = smoothPath(currentDragPath);
+        
+        newPaths.push({
+          markerNumber: marker.number,
+          markerTeam: marker.team,
+          points: smoothedPath,
+          hasBall: dragStartPosition.hasBall
+        });
+        
+        setMarkerPaths(newPaths);
+        
+        recordAction('MOVE_PLAYER', {
+          number: marker.number,
+          team: marker.team,
+          prevX: dragStartPosition.x,
+          prevY: dragStartPosition.y,
+          newX: marker.x,
+          newY: marker.y
+        });
+        
+        setPassLines([]);
+        redrawStrokes();
+      }
+    }
+    
+    // Clear drag state
+    setDraggingMarker(null);
+    setDragStartPosition(null);
+    setCurrentDragPath([]);
+  };
+
   return (
     <div className="App">
       <div 
@@ -1456,7 +1608,7 @@ function App() {
         onClick={() => setCourtFlipped(!courtFlipped)}
         title={courtFlipped ? "Click to unflip court" : "Click to flip court horizontally"}
       >
-        v2.3.5 | Allan C.
+        v2.5.0 | Allan C.
       </div>
       
       {isRecording && (
@@ -1468,9 +1620,30 @@ function App() {
       
       <canvas
         ref={canvasRef}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
+        onMouseDown={(e) => {
+          // If in marker mode, handle marker placement/dragging
+          if (markerMode) {
+            handleMarkerMouseDown(e);
+            return;
+          }
+          startDrawing(e);
+        }}
+        onMouseMove={(e) => {
+          // If dragging a marker with mouse, handle it
+          if (markerMode && draggingMarker !== null) {
+            handleMarkerMouseMove(e);
+            return;
+          }
+          draw(e);
+        }}
+        onMouseUp={(e) => {
+          // If in marker mode and was dragging
+          if (markerMode && draggingMarker !== null) {
+            handleMarkerMouseUp(e);
+            return;
+          }
+          stopDrawing();
+        }}
         onMouseLeave={stopDrawing}
         onDoubleClick={handleMarkerDoubleClick}
         onTouchStart={(e) => {
@@ -1579,10 +1752,28 @@ function App() {
         
         {markerMode && (
           <div className="marker-numbers">
+            <div className="team-toggle">
+              <button
+                className={`team-toggle-btn ${selectedTeam === 'team' ? 'active' : ''}`}
+                onClick={() => setSelectedTeam('team')}
+                title="Place your team's players"
+              >
+                <span className="team-marker team">○</span>
+                <span>Team</span>
+              </button>
+              <button
+                className={`team-toggle-btn opponent ${selectedTeam === 'opponent' ? 'active' : ''}`}
+                onClick={() => setSelectedTeam('opponent')}
+                title="Place opponent players"
+              >
+                <span className="team-marker opp">●</span>
+                <span>Opp</span>
+              </button>
+            </div>
             {[1, 2, 3, 4, 5].map(num => (
               <button
                 key={num}
-                className={`marker-num-btn ${selectedMarker === num ? 'active' : ''}`}
+                className={`marker-num-btn ${selectedMarker === num ? 'active' : ''} ${selectedTeam === 'opponent' ? 'opponent' : ''}`}
                 onClick={() => setSelectedMarker(num)}
               >
                 {num}
@@ -1654,6 +1845,54 @@ function App() {
           <span className="btn-icon">{isRecording ? '⏹️' : '⏺️'}</span>
           <span className="btn-label">{isRecording ? 'Stop' : 'Record'}</span>
         </button>
+      </div>
+      
+      {/* Notes Panel */}
+      <div className={`notes-panel ${notesOpen ? 'open' : ''}`}>
+        <button 
+          className="notes-toggle"
+          onClick={() => {
+            setNotesOpen(!notesOpen);
+            // Focus textarea when opening
+            if (!notesOpen && notesTextareaRef.current) {
+              setTimeout(() => notesTextareaRef.current.focus(), 100);
+            }
+          }}
+          title={notesOpen ? "Close notes" : "Open notes"}
+        >
+          <span className="notes-toggle-icon">{notesOpen ? '✕' : '📋'}</span>
+          <span className="notes-toggle-label">{notesOpen ? 'Close' : 'Notes'}</span>
+        </button>
+        
+        {notesOpen && (
+          <div className="notes-content">
+            <div className="notes-header">
+              <span className="notes-title">📋 Coach Notes</span>
+              <span className="notes-hint">Auto-saves • Persists between sessions</span>
+            </div>
+            <textarea
+              ref={notesTextareaRef}
+              className="notes-textarea"
+              value={notesContent}
+              onChange={(e) => setNotesContent(e.target.value)}
+              placeholder="Reminders for timeout or pre-game...
+
+• Defensive rotation on pick & roll
+• Push tempo after made baskets
+• Box out #23"
+            />
+            <button 
+              className="notes-clear-btn"
+              onClick={() => {
+                if (window.confirm('Clear all notes?')) {
+                  setNotesContent('');
+                }
+              }}
+            >
+              Clear Notes
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

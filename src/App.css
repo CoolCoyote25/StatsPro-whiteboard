@@ -422,3 +422,245 @@ button.active {
     opacity: 0.3;
   }
 }
+
+/* Team Toggle */
+.team-toggle {
+  display: flex;
+  background: #eee;
+  border-radius: 8px;
+  padding: 2px;
+  margin-right: 8px;
+}
+
+.team-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #666;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: auto;
+}
+
+.team-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: none;
+  box-shadow: none;
+}
+
+.team-toggle-btn.active {
+  background: white;
+  color: #2B2D42;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  border: none;
+}
+
+.team-toggle-btn.opponent.active {
+  background: #2B2D42;
+  color: white;
+}
+
+.team-marker {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.team-marker.team {
+  color: #333;
+}
+
+.team-marker.opp {
+  color: #2B2D42;
+}
+
+.team-toggle-btn.opponent.active .team-marker.opp {
+  color: white;
+}
+
+/* Opponent marker number buttons */
+.marker-num-btn.opponent {
+  background: #2B2D42;
+  color: white;
+  border-color: #1a1b28;
+}
+
+.marker-num-btn.opponent:hover {
+  background: #3d3f5c;
+}
+
+.marker-num-btn.opponent.active {
+  background: #1a1b28;
+  border-color: #E85D04;
+  box-shadow: 0 0 0 3px rgba(232, 93, 4, 0.3);
+}
+
+/* Notes Panel - Top Right */
+.notes-panel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.notes-toggle {
+  background: rgba(43, 45, 66, 0.9);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+}
+
+.notes-toggle:hover {
+  background: rgba(43, 45, 66, 1);
+  transform: scale(1.02);
+}
+
+.notes-panel.open .notes-toggle {
+  background: rgba(232, 93, 4, 0.95);
+  border-radius: 10px 10px 0 0;
+}
+
+.notes-panel.open .notes-toggle:hover {
+  background: rgba(232, 93, 4, 1);
+  transform: none;
+}
+
+.notes-toggle-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.notes-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.notes-content {
+  background: rgba(255, 255, 255, 0.98);
+  width: 320px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
+}
+
+.notes-header {
+  background: #2B2D42;
+  color: white;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notes-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.notes-hint {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.notes-textarea {
+  flex: 1;
+  min-height: 250px;
+  padding: 16px;
+  border: none;
+  font-size: 18px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  resize: none;
+  outline: none;
+  color: #1a1a1a;
+}
+
+.notes-textarea::placeholder {
+  color: #999;
+  font-style: italic;
+}
+
+.notes-textarea:focus {
+  background: #fffef5;
+}
+
+.notes-clear-btn {
+  margin: 12px 16px 16px;
+  padding: 10px 16px;
+  background: #f5f5f5;
+  color: #666;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notes-clear-btn:hover {
+  background: #fee;
+  color: #c00;
+  border-color: #fcc;
+}
+
+/* Mobile optimizations for notes */
+@media (max-width: 768px) {
+  .notes-content {
+    width: 280px;
+    max-height: 55vh;
+  }
+  
+  .notes-textarea {
+    font-size: 16px;
+    min-height: 200px;
+    padding: 14px;
+  }
+  
+  .notes-toggle {
+    padding: 8px 12px;
+  }
+  
+  .notes-toggle-icon {
+    font-size: 18px;
+  }
+  
+  .notes-toggle-label {
+    font-size: 11px;
+  }
+  
+  /* Team toggle mobile */
+  .team-toggle {
+    margin-right: 6px;
+  }
+  
+  .team-toggle-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .team-marker {
+    font-size: 14px;
+  }
+}
