@@ -57,8 +57,15 @@ function App() {
   // Saved plays
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
-  const [playName, setPlayName] = useState('');
   const [savedPlays, setSavedPlays] = useState([]);
+  const [selectedCollection, setSelectedCollection] = useState('General');
+  const [newCollectionName, setNewCollectionName] = useState('');
+  const [isCreatingCollection, setIsCreatingCollection] = useState(false);
+  
+  // Collection navigation (when a collection is loaded)
+  const [activeCollection, setActiveCollection] = useState(null); // Currently loaded collection name
+  const [activeCollectionPlays, setActiveCollectionPlays] = useState([]); // Cached sorted plays array
+  const [activePlayIndex, setActivePlayIndex] = useState(0); // Current play index in collection
   
   // Notes panel
   const [notesOpen, setNotesOpen] = useState(false);
@@ -80,6 +87,18 @@ function App() {
     const savedNotes = localStorage.getItem('coach-notes');
     if (savedNotes) {
       setNotesContent(savedNotes);
+    }
+  }, []);
+
+  // Load saved plays from localStorage on mount
+  useEffect(() => {
+    const plays = localStorage.getItem('saved-plays');
+    if (plays) {
+      try {
+        setSavedPlays(JSON.parse(plays));
+      } catch (e) {
+        console.error('Error loading saved plays:', e);
+      }
     }
   }, []);
 
@@ -647,6 +666,159 @@ function App() {
 
   const handleEraserToggle = () => {
     setIsEraser(!isEraser);
+  };
+
+  const handleLineStyleToggle = () => {
+    setLineStyle(lineStyle === 'solid' ? 'dashed' : 'solid');
+  };
+
+  // Save current play
+  const savePlay = () => {
+    const collectionToUse = isCreatingCollection && newCollectionName.trim() 
+      ? newCollectionName.trim() 
+      : selectedCollection;
+    
+    const play = {
+      id: Date.now(),
+      collection: collectionToUse,
+      createdAt: new Date().toISOString(),
+      data: {
+        markers: markers,
+        markerPaths: markerPaths,
+        passLines: passLines,
+        strokes: strokes
+      }
+    };
+    
+    const updatedPlays = [...savedPlays, play];
+    setSavedPlays(updatedPlays);
+    localStorage.setItem('saved-plays', JSON.stringify(updatedPlays));
+    
+    // Reset modal state
+    setSelectedCollection(collectionToUse); // Remember last used collection
+    setNewCollectionName('');
+    setIsCreatingCollection(false);
+    setShowSaveModal(false);
+  };
+
+  // Get unique collections from saved plays
+  const getCollections = () => {
+    const collections = new Set(['General']); // Always have General
+    savedPlays.forEach(play => {
+      if (play.collection) {
+        collections.add(play.collection);
+      }
+    });
+    return Array.from(collections).sort();
+  };
+
+  // Get plays in a specific collection (sorted by creation date)
+  const getPlaysInCollection = (collection) => {
+    return savedPlays
+      .filter(play => (play.collection || 'General') === collection)
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.id || 0);
+        const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.id || 0);
+        return dateA - dateB;
+      });
+  };
+
+  // Load a collection (starts at first play)
+  const loadCollection = (collection) => {
+    const plays = getPlaysInCollection(collection);
+    if (plays.length === 0) return;
+    
+    // Close modal first to prevent any rendering interference
+    setShowLoadModal(false);
+    
+    // Then cache the plays array and load the first play
+    setActiveCollectionPlays(plays);
+    setActiveCollection(collection);
+    setActivePlayIndex(0);
+    loadPlayData(plays[0]);
+  };
+
+  // Load play data onto the canvas
+  const loadPlayData = (play) => {
+    setStrokes(play.data.strokes || []);
+    setMarkers(play.data.markers || []);
+    setMarkerPaths(play.data.markerPaths || []);
+    setPassLines(play.data.passLines || []);
+    setActionHistory([]);
+    // Note: redrawing is handled by useEffect that watches these state changes
+  };
+
+  // Navigate to next play in collection
+  const nextPlay = () => {
+    if (!activeCollection || activeCollectionPlays.length === 0) return;
+    if (activePlayIndex < activeCollectionPlays.length - 1) {
+      const newIndex = activePlayIndex + 1;
+      setActivePlayIndex(newIndex);
+      loadPlayData(activeCollectionPlays[newIndex]);
+    }
+  };
+
+  // Navigate to previous play in collection
+  const prevPlay = () => {
+    if (!activeCollection || activeCollectionPlays.length === 0) return;
+    if (activePlayIndex > 0) {
+      const newIndex = activePlayIndex - 1;
+      setActivePlayIndex(newIndex);
+      loadPlayData(activeCollectionPlays[newIndex]);
+    }
+  };
+
+  // Close collection navigation
+  const closeCollection = () => {
+    setActiveCollection(null);
+    setActiveCollectionPlays([]);
+    setActivePlayIndex(0);
+  };
+
+  // Delete a collection and all its plays
+  const deleteCollection = (collection) => {
+    const playsInCollection = getPlaysInCollection(collection);
+    if (!window.confirm(`Delete "${collection}" and all ${playsInCollection.length} plays in it?`)) return;
+    
+    const updatedPlays = savedPlays.filter(p => (p.collection || 'General') !== collection);
+    setSavedPlays(updatedPlays);
+    localStorage.setItem('saved-plays', JSON.stringify(updatedPlays));
+    
+    // If we deleted the active collection, close navigation
+    if (activeCollection === collection) {
+      closeCollection();
+    }
+  };
+
+  // Delete a saved play
+  const deletePlay = (playId) => {
+    if (!window.confirm('Delete this play?')) return;
+    
+    const updatedPlays = savedPlays.filter(p => p.id !== playId);
+    setSavedPlays(updatedPlays);
+    localStorage.setItem('saved-plays', JSON.stringify(updatedPlays));
+    
+    // If in active collection, update the cached array and adjust index
+    if (activeCollection) {
+      const remainingPlays = updatedPlays
+        .filter(p => (p.collection || 'General') === activeCollection)
+        .sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.id || 0);
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.id || 0);
+          return dateA - dateB;
+        });
+      
+      if (remainingPlays.length === 0) {
+        closeCollection();
+      } else {
+        setActiveCollectionPlays(remainingPlays);
+        // Adjust index if we deleted the last play
+        const newIndex = Math.min(activePlayIndex, remainingPlays.length - 1);
+        setActivePlayIndex(newIndex);
+        // Load the play at new index
+        loadPlayData(remainingPlays[newIndex]);
+      }
+    }
   };
 
   const startRecording = () => {
@@ -1608,7 +1780,8 @@ function App() {
         onClick={() => setCourtFlipped(!courtFlipped)}
         title={courtFlipped ? "Click to unflip court" : "Click to flip court horizontally"}
       >
-        v2.5.0 | Allan C.
+        <div>v2.8.0</div>
+        <div>Allan C.</div>
       </div>
       
       {isRecording && (
@@ -1726,28 +1899,36 @@ function App() {
       
       <div className="top-controls">
         <button 
-          className={`line-style-btn ${lineStyle === 'solid' && !isEraser ? 'active' : ''}`}
-          onClick={() => setLineStyle('solid')}
-        >
-          ━━━
-        </button>
-        
-        <button 
-          className={`line-style-btn ${lineStyle === 'dashed' && !isEraser ? 'active' : ''}`}
-          onClick={() => setLineStyle('dashed')}
-        >
-          ╌╌╌
-        </button>
-        
-        <div className="marker-separator"></div>
-        
-        <button 
           className={`marker-mode-btn ${markerMode ? 'active' : ''}`}
           onClick={() => setMarkerMode(!markerMode)}
           title="Toggle players mode"
         >
           <span className="btn-icon">👥</span>
           <span className="btn-label">{markerMode ? '✓ Players' : 'Players'}</span>
+        </button>
+        
+        <button 
+          className={`record-btn ${isRecording ? 'recording' : ''}`}
+          onClick={toggleRecording}
+          title={isRecording ? "Stop recording" : "Start recording video"}
+        >
+          <span className="btn-icon">{isRecording ? '⏹️' : '⏺️'}</span>
+          <span className="btn-label">{isRecording ? 'Stop' : 'Record'}</span>
+        </button>
+        
+        <button 
+          className={`notes-btn ${notesOpen ? 'active' : ''}`}
+          onClick={() => {
+            setNotesOpen(!notesOpen);
+            // Focus textarea when opening
+            if (!notesOpen && notesTextareaRef.current) {
+              setTimeout(() => notesTextareaRef.current.focus(), 100);
+            }
+          }}
+          title={notesOpen ? "Close notes" : "Open notes"}
+        >
+          <span className="btn-icon">📋</span>
+          <span className="btn-label">{notesOpen ? 'Close' : 'Notes'}</span>
         </button>
         
         {markerMode && (
@@ -1787,23 +1968,23 @@ function App() {
       </div>
       
       <div className="controls">
-        {/* Drawing Tools Group */}
+        {/* All buttons on one line */}
         <button 
-          className={`color-btn red ${color === 'red' && !isEraser ? 'active' : ''}`}
-          onClick={() => handleColorChange('red')}
-          title="Draw with red marker"
+          className={`color-btn ${color}`}
+          onClick={() => handleColorChange(color === 'red' ? 'black' : 'red')}
+          title={`Drawing in ${color} - tap to switch`}
         >
-          <span className="btn-icon">🔴</span>
-          <span className="btn-label">Red</span>
+          <span className="btn-icon">{color === 'red' ? '🔴' : '⚫'}</span>
+          <span className="btn-label">{color === 'red' ? 'Red' : 'Black'}</span>
         </button>
         
         <button 
-          className={`color-btn black ${color === 'black' && !isEraser ? 'active' : ''}`}
-          onClick={() => handleColorChange('black')}
-          title="Draw with black marker"
+          className={`line-style-btn ${!isEraser ? 'active' : ''}`}
+          onClick={handleLineStyleToggle}
+          title={`Line style: ${lineStyle} - tap to switch`}
         >
-          <span className="btn-icon">⚫</span>
-          <span className="btn-label">Black</span>
+          <span className="btn-icon">{lineStyle === 'solid' ? '━━━' : '╌╌╌'}</span>
+          <span className="btn-label">{lineStyle === 'solid' ? 'Solid' : 'Dash'}</span>
         </button>
         
         <button 
@@ -1818,7 +1999,6 @@ function App() {
         {/* Separator */}
         <div className="button-group-separator"></div>
         
-        {/* Actions Group */}
         <button 
           className="undo-btn"
           onClick={handleUndo}
@@ -1837,34 +2017,31 @@ function App() {
           <span className="btn-label">Clear</span>
         </button>
         
+        {/* Separator */}
+        <div className="button-group-separator"></div>
+        
         <button 
-          className={`record-btn ${isRecording ? 'recording' : ''}`}
-          onClick={toggleRecording}
-          title={isRecording ? "Stop recording" : "Start recording video"}
+          className="save-btn"
+          onClick={() => setShowSaveModal(true)}
+          title="Save this play"
         >
-          <span className="btn-icon">{isRecording ? '⏹️' : '⏺️'}</span>
-          <span className="btn-label">{isRecording ? 'Stop' : 'Record'}</span>
+          <span className="btn-icon">💾</span>
+          <span className="btn-label">Save</span>
+        </button>
+        
+        <button 
+          className="load-btn"
+          onClick={() => setShowLoadModal(true)}
+          title="Load a saved play"
+        >
+          <span className="btn-icon">📂</span>
+          <span className="btn-label">Load</span>
         </button>
       </div>
       
       {/* Notes Panel */}
-      <div className={`notes-panel ${notesOpen ? 'open' : ''}`}>
-        <button 
-          className="notes-toggle"
-          onClick={() => {
-            setNotesOpen(!notesOpen);
-            // Focus textarea when opening
-            if (!notesOpen && notesTextareaRef.current) {
-              setTimeout(() => notesTextareaRef.current.focus(), 100);
-            }
-          }}
-          title={notesOpen ? "Close notes" : "Open notes"}
-        >
-          <span className="notes-toggle-icon">{notesOpen ? '✕' : '📋'}</span>
-          <span className="notes-toggle-label">{notesOpen ? 'Close' : 'Notes'}</span>
-        </button>
-        
-        {notesOpen && (
+      {notesOpen && (
+        <div className="notes-panel open">
           <div className="notes-content">
             <div className="notes-header">
               <span className="notes-title">📋 Coach Notes</span>
@@ -1892,8 +2069,158 @@ function App() {
               Clear Notes
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+      
+      {/* Save Play Modal */}
+      {showSaveModal && (
+        <div className="modal-overlay" onClick={() => { setShowSaveModal(false); setIsCreatingCollection(false); setNewCollectionName(''); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>💾 Save Play</h2>
+              <button className="modal-close" onClick={() => { setShowSaveModal(false); setIsCreatingCollection(false); setNewCollectionName(''); }}>✕</button>
+            </div>
+            <div className="modal-body">
+              <label htmlFor="play-collection">Save to collection:</label>
+              {!isCreatingCollection ? (
+                <div className="collection-selector">
+                  <select
+                    id="play-collection"
+                    value={selectedCollection}
+                    onChange={(e) => setSelectedCollection(e.target.value)}
+                  >
+                    {getCollections().map(col => (
+                      <option key={col} value={col}>{col}</option>
+                    ))}
+                  </select>
+                  <button 
+                    className="new-collection-btn"
+                    onClick={() => setIsCreatingCollection(true)}
+                    title="Create new collection"
+                  >
+                    + New
+                  </button>
+                </div>
+              ) : (
+                <div className="collection-selector">
+                  <input
+                    type="text"
+                    value={newCollectionName}
+                    onChange={(e) => setNewCollectionName(e.target.value)}
+                    placeholder="e.g. Offense, SLOB, Press Break"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newCollectionName.trim()) savePlay();
+                    }}
+                  />
+                  <button 
+                    className="cancel-new-collection-btn"
+                    onClick={() => { setIsCreatingCollection(false); setNewCollectionName(''); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+              <p className="save-hint">Play will be added as Play #{getPlaysInCollection(isCreatingCollection && newCollectionName.trim() ? newCollectionName.trim() : selectedCollection).length + 1}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn cancel" onClick={() => { setShowSaveModal(false); setIsCreatingCollection(false); setNewCollectionName(''); }}>Cancel</button>
+              <button className="modal-btn save" onClick={savePlay}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Load Collection Modal */}
+      {showLoadModal && (
+        <div className="modal-overlay" onClick={() => setShowLoadModal(false)}>
+          <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📂 Playbook</h2>
+              <button className="modal-close" onClick={() => setShowLoadModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {savedPlays.length === 0 ? (
+                <div className="no-plays">
+                  <p>No saved plays yet.</p>
+                  <p className="hint">Create a play and tap Save to build your playbook!</p>
+                </div>
+              ) : (
+                <div className="collections-list">
+                  {getCollections().map((collection) => {
+                    const playsCount = getPlaysInCollection(collection).length;
+                    if (playsCount === 0) return null;
+                    return (
+                      <div key={collection} className="collection-item" onClick={() => loadCollection(collection)}>
+                        <div className="collection-info">
+                          <span className="collection-icon">📁</span>
+                          <span className="collection-name">{collection}</span>
+                          <span className="collection-count">{playsCount} play{playsCount !== 1 ? 's' : ''}</span>
+                        </div>
+                        <button 
+                          className="collection-delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteCollection(collection);
+                          }}
+                          title="Delete collection"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="modal-btn cancel" onClick={() => setShowLoadModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Collection Navigation Bar */}
+      {activeCollection && activeCollectionPlays.length > 0 && (
+        <div className="collection-nav">
+          <button 
+            className="nav-close"
+            onClick={closeCollection}
+            title="Close collection"
+          >
+            ✕
+          </button>
+          <button 
+            className={`nav-arrow ${activePlayIndex === 0 ? 'disabled' : ''}`}
+            onClick={prevPlay}
+            disabled={activePlayIndex === 0}
+          >
+            ←
+          </button>
+          <div className="nav-info">
+            <span className="nav-collection">{activeCollection}</span>
+            <span className="nav-position">Play {activePlayIndex + 1} / {activeCollectionPlays.length}</span>
+          </div>
+          <button 
+            className={`nav-arrow ${activePlayIndex >= activeCollectionPlays.length - 1 ? 'disabled' : ''}`}
+            onClick={nextPlay}
+            disabled={activePlayIndex >= activeCollectionPlays.length - 1}
+          >
+            →
+          </button>
+          <button 
+            className="nav-delete"
+            onClick={() => {
+              if (activeCollectionPlays[activePlayIndex]) {
+                deletePlay(activeCollectionPlays[activePlayIndex].id);
+              }
+            }}
+            title="Delete this play"
+          >
+            🗑️
+          </button>
+        </div>
+      )}
     </div>
   );
 }
