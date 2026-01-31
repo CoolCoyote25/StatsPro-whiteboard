@@ -33,8 +33,9 @@ function App() {
   // Universal action history for UNDO
   const [actionHistory, setActionHistory] = useState([]); // Array of {type, data}
   
-  // Court rotation state (0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°)
-  const [courtRotation, setCourtRotation] = useState(0);
+  // Removed court rotation feature
+  // Court background toggle state
+  const [useHorizontalCourt, setUseHorizontalCourt] = useState(false);
   
   // Marker movement paths
   const [markerPaths, setMarkerPaths] = useState([]); // Array of {markerNumber, points: [{x,y}], hasBall: boolean}
@@ -74,13 +75,23 @@ function App() {
 
   // Load court image
   useEffect(() => {
+    setImageLoaded(false); // Reset to trigger redraw when new image loads
     const img = new Image();
-    img.src = '/court-background.png';
+    const imagePath = useHorizontalCourt ? '/court-background-horizontal.png' : '/court-background.png';
+    img.src = imagePath;
     img.onload = () => {
       courtImageRef.current = img;
       setImageLoaded(true);
     };
-  }, []);
+    img.onerror = () => {
+      console.error('Failed to load court image:', imagePath);
+      alert(`Court image not found: ${imagePath}\nPlease add the file to the public folder.`);
+      // Fallback to default court
+      if (useHorizontalCourt) {
+        setUseHorizontalCourt(false); // Switch back to default
+      }
+    };
+  }, [useHorizontalCourt]);
 
   // Load notes from localStorage on mount
   useEffect(() => {
@@ -143,7 +154,7 @@ function App() {
     
     // Redraw all strokes
     redrawStrokes();
-  }, [strokes, markers, markerPaths, passLines, imageLoaded, courtRotation]);
+  }, [strokes, markers, markerPaths, passLines, imageLoaded]);
 
   // Cleanup ball animation on unmount
   useEffect(() => {
@@ -370,16 +381,6 @@ function App() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     
-    // Apply rotation if enabled (0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°)
-    if (courtRotation > 0) {
-      ctx.save();
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-courtRotation * Math.PI / 2); // Rotate counter-clockwise
-      ctx.translate(-centerX, -centerY); // Translate back from center
-    }
-    
     // First, draw a clean court background
     drawCourt();
     
@@ -431,11 +432,6 @@ function App() {
     
     // Draw player markers on top of everything
     drawMarkers();
-    
-    // Restore canvas state if rotated
-    if (courtRotation > 0) {
-      ctx.restore();
-    }
   };
 
   const startDrawing = (e) => {
@@ -462,16 +458,6 @@ function App() {
     
     // Redraw everything including the current stroke in progress
     const ctx = canvas.getContext('2d');
-    
-    // Apply rotation if enabled
-    if (courtRotation > 0) {
-      ctx.save();
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-courtRotation * Math.PI / 2);
-      ctx.translate(-centerX, -centerY); // Fixed: translate back from center
-    }
     
     // First, draw court background
     drawCourt();
@@ -556,11 +542,6 @@ function App() {
     
     // Draw player markers on top
     drawMarkers();
-    
-    // Restore canvas state if rotated
-    if (courtRotation > 0) {
-      ctx.restore();
-    }
   };
 
   const stopDrawing = () => {
@@ -1780,9 +1761,10 @@ function App() {
   return (
     <div className="App">
       <div 
-        className={`version-display ${courtRotation > 0 ? 'flipped' : ''}`}
-        onClick={() => setCourtRotation((courtRotation + 1) % 4)}
-        title={`Rotate court 90° (currently ${courtRotation * 90}°)`}
+        className="version-display"
+        onClick={() => setUseHorizontalCourt(!useHorizontalCourt)}
+        title={useHorizontalCourt ? "Switch to vertical court" : "Switch to horizontal court"}
+        style={{ cursor: 'pointer' }}
       >
         <div>v2.8.0</div>
         <div>Allan C.</div>
