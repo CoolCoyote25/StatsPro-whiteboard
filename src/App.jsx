@@ -33,8 +33,8 @@ function App() {
   // Universal action history for UNDO
   const [actionHistory, setActionHistory] = useState([]); // Array of {type, data}
   
-  // Court flip state
-  const [courtFlipped, setCourtFlipped] = useState(false);
+  // Court rotation state (0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°)
+  const [courtRotation, setCourtRotation] = useState(0);
   
   // Marker movement paths
   const [markerPaths, setMarkerPaths] = useState([]); // Array of {markerNumber, points: [{x,y}], hasBall: boolean}
@@ -143,7 +143,7 @@ function App() {
     
     // Redraw all strokes
     redrawStrokes();
-  }, [strokes, markers, markerPaths, passLines, imageLoaded, courtFlipped]);
+  }, [strokes, markers, markerPaths, passLines, imageLoaded, courtRotation]);
 
   // Cleanup ball animation on unmount
   useEffect(() => {
@@ -187,21 +187,8 @@ function App() {
       drawY = 0;
     }
     
-    // Apply horizontal flip if enabled
-    if (courtFlipped) {
-      ctx.save();
-      // Flip horizontally: scale x by -1 and translate
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
-    }
-    
     // Draw the court image centered and scaled
     ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-    
-    // Restore canvas state if flipped
-    if (courtFlipped) {
-      ctx.restore();
-    }
   };
 
   const drawMarkers = () => {
@@ -383,6 +370,16 @@ function App() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     
+    // Apply rotation if enabled (0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°)
+    if (courtRotation > 0) {
+      ctx.save();
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-courtRotation * Math.PI / 2); // Rotate counter-clockwise
+      ctx.translate(-centerX, -centerY); // Translate back from center
+    }
+    
     // First, draw a clean court background
     drawCourt();
     
@@ -434,6 +431,11 @@ function App() {
     
     // Draw player markers on top of everything
     drawMarkers();
+    
+    // Restore canvas state if rotated
+    if (courtRotation > 0) {
+      ctx.restore();
+    }
   };
 
   const startDrawing = (e) => {
@@ -460,6 +462,16 @@ function App() {
     
     // Redraw everything including the current stroke in progress
     const ctx = canvas.getContext('2d');
+    
+    // Apply rotation if enabled
+    if (courtRotation > 0) {
+      ctx.save();
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-courtRotation * Math.PI / 2);
+      ctx.translate(-centerX, -centerY); // Fixed: translate back from center
+    }
     
     // First, draw court background
     drawCourt();
@@ -544,6 +556,11 @@ function App() {
     
     // Draw player markers on top
     drawMarkers();
+    
+    // Restore canvas state if rotated
+    if (courtRotation > 0) {
+      ctx.restore();
+    }
   };
 
   const stopDrawing = () => {
@@ -1310,46 +1327,39 @@ function App() {
         }
       }
     } else {
-      // Tapping on empty space - place new marker
+      // Tapping on empty space - place new marker ONLY if it doesn't already exist
       
       // Check if this number+team combo already exists
       const existingMarkerIndex = markers.findIndex(m => m.number === selectedMarker && m.team === selectedTeam);
       
-      // Place new marker
-      const ctx = canvas.getContext('2d');
-      const radius = 25;
-      const isOpponent = selectedTeam === 'opponent';
-      
-      // Draw the marker immediately with correct team color
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isOpponent ? 'rgba(43, 45, 66, 0.95)' : 'rgba(255, 255, 255, 0.9)';
-      ctx.fill();
-      ctx.strokeStyle = isOpponent ? '#1a1b28' : '#000';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      
-      // Draw number with correct color
-      ctx.fillStyle = isOpponent ? '#fff' : '#000';
-      ctx.font = 'bold 24px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(selectedMarker, x, y);
-      
-      // Then update state
-      let newMarkers;
-      if (existingMarkerIndex !== -1) {
-        // Replace existing marker with same number and team (keep ball possession and screen if had them)
-        newMarkers = [...markers];
-        const hadBall = newMarkers[existingMarkerIndex].hasBall;
-        const hadScreen = newMarkers[existingMarkerIndex].screen;
-        newMarkers[existingMarkerIndex] = { number: selectedMarker, x, y, hasBall: hadBall, screen: hadScreen || null, team: selectedTeam };
-      } else {
-        // Add new marker
-        newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+      if (existingMarkerIndex === -1) {
+        // Marker doesn't exist - place new marker
+        const ctx = canvas.getContext('2d');
+        const radius = 25;
+        const isOpponent = selectedTeam === 'opponent';
+        
+        // Draw the marker immediately with correct team color
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = isOpponent ? 'rgba(43, 45, 66, 0.95)' : 'rgba(255, 255, 255, 0.9)';
+        ctx.fill();
+        ctx.strokeStyle = isOpponent ? '#1a1b28' : '#000';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // Draw number with correct color
+        ctx.fillStyle = isOpponent ? '#fff' : '#000';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(selectedMarker, x, y);
+        
+        // Then update state
+        const newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+        setMarkers(newMarkers);
         recordAction('PLACE_PLAYER', { number: selectedMarker, x, y, team: selectedTeam });
       }
-      setMarkers(newMarkers);
+      // If marker already exists, do nothing (don't relocate it)
       
       // Reset double-tap tracking
       setLastTapTime(0);
@@ -1683,24 +1693,18 @@ function App() {
       setDragStartPosition({ ...startPos, hasBall: marker.hasBall });
       setCurrentDragPath([startPos]);
     } else {
-      // Clicking on empty space - place new marker
+      // Clicking on empty space - place new marker ONLY if it doesn't already exist
       
       // Check if this number+team combo already exists
       const existingMarkerIndex = markers.findIndex(m => m.number === selectedMarker && m.team === selectedTeam);
       
-      let newMarkers;
-      if (existingMarkerIndex !== -1) {
-        // Replace existing marker with same number and team (keep ball possession and screen if had them)
-        newMarkers = [...markers];
-        const hadBall = newMarkers[existingMarkerIndex].hasBall;
-        const hadScreen = newMarkers[existingMarkerIndex].screen;
-        newMarkers[existingMarkerIndex] = { number: selectedMarker, x, y, hasBall: hadBall, screen: hadScreen || null, team: selectedTeam };
-      } else {
-        // Add new marker
-        newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+      if (existingMarkerIndex === -1) {
+        // Marker doesn't exist - add new marker
+        const newMarkers = [...markers, { number: selectedMarker, x, y, hasBall: false, screen: null, team: selectedTeam }];
+        setMarkers(newMarkers);
         recordAction('PLACE_PLAYER', { number: selectedMarker, x, y, team: selectedTeam });
       }
-      setMarkers(newMarkers);
+      // If marker already exists, do nothing (don't relocate it)
     }
   };
 
@@ -1776,9 +1780,9 @@ function App() {
   return (
     <div className="App">
       <div 
-        className={`version-display ${courtFlipped ? 'flipped' : ''}`}
-        onClick={() => setCourtFlipped(!courtFlipped)}
-        title={courtFlipped ? "Click to unflip court" : "Click to flip court horizontally"}
+        className={`version-display ${courtRotation > 0 ? 'flipped' : ''}`}
+        onClick={() => setCourtRotation((courtRotation + 1) % 4)}
+        title={`Rotate court 90° (currently ${courtRotation * 90}°)`}
       >
         <div>v2.8.0</div>
         <div>Allan C.</div>
